@@ -1,81 +1,63 @@
-// Gmsh project created on Sun Jun 28 18:26:48 2026
-// Modified for Central Crack Configuration
+// Gmsh project - REBCO Tape with Center Crack (Fixed OpenCASCADE IDs)
 SetFactory("OpenCASCADE");
 
 tape_width = 4.0;    // 4 mm wide tape
 tape_thick = 0.4;    // 0.4mm thick layer
-air_radius = 10.0;   // 10 mm radius for the magnetic field boundary
-lc = 0.05;           // Mesh characteristic length for tape
-lc_air = 0.5;        // Coarser mesh for the air
+air_radius = 10.0;   // 10 mm radius for air boundary
+lc = 0.05;           // Mesh length for tape
+lc_air = 0.5;        // Mesh length for air
 
-crack_w = 0.02;      // Finite width of the crack (20 microns gap)
-
-// ==========================================
-// 1. DEFINE LEFT HALF OF TAPE
-// ==========================================
-Point(1) = {-tape_width/2, -tape_thick/2, 0, lc};
-Point(2) = {-crack_w/2,    -tape_thick/2, 0, lc}; // Crack bottom-left node
-Point(3) = {-crack_w/2,     tape_thick/2, 0, lc}; // Crack top-left node
-Point(4) = {-tape_width/2,  tape_thick/2, 0, lc};
-
-Line(1) = {1, 2};
-Line(2) = {2, 3}; // Left interface wall of the crack
-Line(3) = {3, 4};
-Line(4) = {4, 1};
-Curve Loop(10) = {1, 2, 3, 4}; 
-Plane Surface(1) = {10}; // HTS_Left Domain
+crack_width = 0.2;  // Increase from 0.05 to 0.2 mm
+crack_thick = 0.4;   // Cuts fully through the thickness
 
 // ==========================================
-// 2. DEFINE RIGHT HALF OF TAPE
+// 1. DEFINE BASE SHAPES USING AUTOMATIC IDs
 // ==========================================
-Point(11) = {crack_w/2,    -tape_thick/2, 0, lc}; // Crack bottom-right node
-Point(12) = {tape_width/2, -tape_thick/2, 0, lc};
-Point(13) = {tape_width/2,  tape_thick/2, 0, lc};
-Point(14) = {crack_w/2,     tape_thick/2, 0, lc}; // Crack top-right node
-
-Line(11) = {11, 12};
-Line(12) = {12, 13};
-Line(13) = {13, 14};
-Line(14) = {14, 11}; // Right interface wall of the crack
-Curve Loop(11) = {11, 12, 13, 14}; 
-Plane Surface(4) = {11}; // HTS_Right Domain
-
-// ==========================================
-// 3. DEFINE CRACK BOUNDARY (AIR HOLE FILLER)
-// ==========================================
-Line(21) = {2, 11}; // Crack floor
-Line(22) = {14, 3}; // Crack ceiling
-Curve Loop(12) = {21, -14, 22, -2}; // Loops around the crack empty gap
-Plane Surface(5) = {12}; // The Crack domain itself (treated as Air properties)
+s_tape = news; Rectangle(s_tape) = {-tape_width/2, -tape_thick/2, 0, tape_width, tape_thick};
+s_crack = news; Rectangle(s_crack) = {-crack_width/2, -crack_thick/2, 0, crack_width, crack_thick};
 
 // ============================================
-// 4. DEFINE THE SURROUNDING AIR BOX (CIRCLE)
+// 2. DEFINE SURROUNDING AIR USING AUTOMATIC IDs
 // ============================================
-Point(5) = {0, 0, 0, lc_air};        
-Point(6) = {air_radius, 0, 0, lc_air};
-Point(7) = {0, air_radius, 0, lc_air};
-Point(8) = {-air_radius, 0, 0, lc_air};
-Point(9) = {0, -air_radius, 0, lc_air};
+p5 = newp; Point(p5) = {0, 0, 0, lc_air};        
+p6 = newp; Point(p6) = {air_radius, 0, 0, lc_air};
+p7 = newp; Point(p7) = {0, air_radius, 0, lc_air};
+p8 = newp; Point(p8) = {-air_radius, 0, 0, lc_air};
+p9 = newp; Point(p9) = {0, -air_radius, 0, lc_air};
 
-Circle(5) = {6, 5, 7};
-Circle(6) = {7, 5, 8};
-Circle(7) = {8, 5, 9};
-Circle(8) = {9, 5, 6};
+c5 = newc; Circle(c5) = {p6, p5, p7}; 
+c6 = newc; Circle(c6) = {p7, p5, p8}; 
+c7 = newc; Circle(c7) = {p8, p5, p9}; 
+c8 = newc; Circle(c8) = {p9, p5, p6};
 
-Curve Loop(20) = {5, 6, 7, 8}; 
+cl1 = newcl; Curve Loop(cl1) = {c5, c6, c7, c8}; 
+s_air = news; Plane Surface(s_air) = {cl1}; 
 
-// Air surface cuts out Left HTS, Right HTS, and the central crack filler
-Plane Surface(2) = {20, 10, 11, 12}; 
+// ==========================================
+// 3. BOOLEAN OPERATIONS & FRAGMENTS
+// ==========================================
+// Slice crack out of tape
+split_tape[] = BooleanDifference{ Surface{s_tape}; Delete; }{ Surface{s_crack}; Delete; };
 
-// Stitch boundaries
-Coherence;
+// Embed split tape components into the air circle
+out[] = BooleanFragments{ Surface{split_tape[], s_air}; Delete; }{};
 
-// ==========================================================
-// 5. PHYSICAL GROUPS FOR GETDP REFERENCE
-// ==========================================================
-Physical Surface("HTS_Left", 1) = {1};  
-Physical Surface("HTS_Right", 4) = {4}; 
-Physical Surface("Air", 2) = {2, 5};             // Merges surrounding air + crack gap into Region 2
-Physical Curve("Air_Infinity", 3) = {5, 6, 7, 8}; 
+// ==========================================
+// 4. MESH REFINEMENT DEFINITION
+// ==========================================
+Mesh.CharacteristicLengthMin = lc;
+Mesh.CharacteristicLengthMax = lc_air;
+
+// ==========================================
+// 5. DYNAMIC PHYSICAL GROUPS (Matching .pro names)
+// ==========================================
+// out[0] and out[1] are the two superconducting halves
+Physical Surface("HTS", 1) = {out[0], out[1]};              
+// out[2] is the remaining air domain filling the outer space and central gap
+Physical Surface("Air", 2) = {out[2]};              
+Physical Curve("Air_Infinity", 3) = {c5, c6, c7, c8}; 
+
+// Automatically finds and traces external boundaries of the two tape parts
+Physical Curve("HTS_Boundary", 4) = CombinedBoundary{ Surface{out[0], out[1]}; };
 
 Show "*";
