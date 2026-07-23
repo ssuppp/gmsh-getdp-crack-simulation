@@ -1,14 +1,13 @@
-// Gmsh project - REBCO Tape with Center Crack (Fixed OpenCASCADE IDs)
+// Gmsh project - REBCO Tape with Center Crack (Optimized for High n-values)
 SetFactory("OpenCASCADE");
 
 tape_width = 4.0;    // 4 mm wide tape
-tape_thick = 0.4;    // 0.4mm thick layer
+tape_thick = 0.04;   // Scaled to 0.04mm (Much closer to real REBCO physics)
 air_radius = 10.0;   // 10 mm radius for air boundary
-lc = 0.05;           // Mesh length for tape
-lc_air = 0.5;        // Mesh length for air
+lc_air = 0.5;        // Coarse mesh for far air
 
-crack_width = 0.2;  // Increase from 0.05 to 0.2 mm
-crack_thick = 0.4;   // Cuts fully through the thickness
+crack_width = 0.2;   // 0.2 mm wide crack
+crack_thick = 0.04;  // Cuts fully through the thickness
 
 // ==========================================
 // 1. DEFINE BASE SHAPES USING AUTOMATIC IDs
@@ -36,28 +35,36 @@ s_air = news; Plane Surface(s_air) = {cl1};
 // ==========================================
 // 3. BOOLEAN OPERATIONS & FRAGMENTS
 // ==========================================
-// Slice crack out of tape
 split_tape[] = BooleanDifference{ Surface{s_tape}; Delete; }{ Surface{s_crack}; Delete; };
-
-// Embed split tape components into the air circle
 out[] = BooleanFragments{ Surface{split_tape[], s_air}; Delete; }{};
 
 // ==========================================
-// 4. MESH REFINEMENT DEFINITION
+// 4. ADVANCED MESH REFINEMENT FOR HIGH N-VALUES
 // ==========================================
-Mesh.CharacteristicLengthMin = lc;
-Mesh.CharacteristicLengthMax = lc_air;
+// This automatically micro-refines the mesh *only* near the tape edges and crack
+Field[1] = Distance;
+Field[1].SurfacesList = {out[0], out[1]};
+Field[1].Sampling = 100;
+
+Field[2] = Threshold;
+Field[2].InField = 1;
+Field[2].SizeMin = 0.005;  // Ultra-fine mesh (5 micrometers) inside/near the tape
+Field[2].SizeMax = lc_air; // Normal mesh far away
+Field[2].DistMin = 0.05;   // Distance where finest mesh is active
+Field[2].DistMax = 1.5;    // Smooth transition zone out to the air
+
+// New fixed code
+Background Field = 2;
+Mesh.MeshSizeFromPoints = 0; 
+Mesh.MeshSizeFromParametricPoints = 0;
+Mesh.MeshSizeExtendFromBoundary = 0;
 
 // ==========================================
 // 5. DYNAMIC PHYSICAL GROUPS (Matching .pro names)
 // ==========================================
-// out[0] and out[1] are the two superconducting halves
 Physical Surface("HTS", 1) = {out[0], out[1]};              
-// out[2] is the remaining air domain filling the outer space and central gap
 Physical Surface("Air", 2) = {out[2]};              
 Physical Curve("Air_Infinity", 3) = {c5, c6, c7, c8}; 
-
-// Automatically finds and traces external boundaries of the two tape parts
 Physical Curve("HTS_Boundary", 4) = CombinedBoundary{ Surface{out[0], out[1]}; };
 
 Show "*";
