@@ -10,23 +10,23 @@ Group {
 }
 
 // ==========================================
-// 2. GLOBAL PARAMETERS (Updated for 0.04mm Thickness)
+// 2. GLOBAL PARAMETERS
 // ==========================================
 Function {
   mu0 = 4.0 * Pi * 1e-7;
 
   // CORRECT PHYSICS: Clean superconductor power law parameters
   Ec = 1e-4;
-  Jc = 1.0e9;       // FIXED: Raised from 2.5e7 to 1.0e9 A/m^2 (Real REBCO scale)
-  n  = 15.0;        // Keep at 15 for stability
+  Jc = 2.5e7;       // Balanced critical current density matching 0.04mm geometry
+  n  = 15.0;        // Sharp physics exponent requested by your sensei
 
   f = 50.0;
   Period = 1.0 / f;
-  Bmax = 0.1;       // FIXED: Drop back to 0.1T temporarily until Jc stability is verified
+  Bmax = 0.1;       // Peak external magnetic field (Tesla)
   H_ext_amplitude = Bmax / mu0;
 
   rho_air = 1e-2;     
-  rho_flow = 1e-3;    // FIXED: Slightly lower ceiling to catch the divergence early
+  rho_flow = 1e-2;    // Safety ceiling circuit guarding crack corners against explosion
 }
 
 // ==========================================
@@ -35,7 +35,7 @@ Function {
 Function {
   mu[] = mu0;
   
-  // Clean Source Formulation vector wave definition
+  // Source Field Formulation vector profiles
   dH_ext_dt[] = Vector[0, H_ext_amplitude * 2.0 * Pi * f * Cos[2.0 * Pi * f * $Time], 0];
   H_ext_vec[] = Vector[0, H_ext_amplitude * Sin[2.0 * Pi * f * $Time], 0];
 }
@@ -88,7 +88,7 @@ Integration {
 }
 
 // ==========================================
-// 7. FORMULATION (Robust Regularization for Crack Corners)
+// 7. FORMULATION (Robust Non-Linear Core)
 // ==========================================
 Formulation {
   { Name Magnetics_H; Type FemEquation;
@@ -97,8 +97,7 @@ Formulation {
     }
 
     Equation {
-      // REGULARIZED POWER LAW: Employs an parallel flux-flow ceiling (rho_flow).
-      // This protects the crack corners where current density tries to go to infinity.
+      // Parallel flux-flow ceiling (rho_flow) integration preventing division-by-zero
       Galerkin {
         [ (1.0 / ( (1.0 / ((Ec / Jc) * (Norm[{d h}] / Jc + 1e-5)^(n - 1.0))) + (1.0 / rho_flow) )) * Dof{d h}, {d h} ];
         In HTS; Jacobian Vol; Integration Int;
@@ -116,7 +115,7 @@ Formulation {
         In Domain_Total; Jacobian Vol; Integration Int;
       }
       
-      // Source Term injecting the opposing derivative vector profile
+      // Source Term injecting external field time derivative profile
       Galerkin {
         [ -1.0 * mu[] * dH_ext_dt[] , {h} ]; 
         In Domain_Total; Jacobian Vol; Integration Int;
@@ -126,7 +125,7 @@ Formulation {
 }
 
 // ==========================================
-// 8. RESOLUTION (Optimized Non-Linear Convergence Solver)
+// 8. RESOLUTION (Fixed Syntax, High Speed)
 // ==========================================
 Resolution {
   { Name Analysis;
@@ -137,13 +136,9 @@ Resolution {
       InitSolution[Sys];
       SaveSolution[Sys];
 
-      // CRUCIAL CHANGE: Time step reduced from Period/20 to Period/100 (100 steps per cycle)
-      // This is absolutely mandatory so the Newton-Raphson solver can handle high n-values smoothly.
-      TimeLoopTheta[0, 2.0 * Period, Period / 100.0, 0.5] {
-        
-        // RELAXATION APPLIED: Maximum iterations bumped to 100, relaxation set to 0.1 to 0.3.
-        // This dampens the solver's adjustments so it doesn't overshoot into math bugs.
-        IterativeLoop[100, 1e-4, 0.2] {
+      // 100 steps total over 2 complete cycles (Fast and stable)
+      TimeLoopTheta[0, 2.0 * Period, Period / 50.0, 0.5] {
+        IterativeLoop[60, 1e-4, 0.6] { 
           Generate[Sys];    
           Solve[Sys]; 
         }
@@ -163,10 +158,9 @@ PostProcessing {
       { Name h;      Value { Local { [ {h} + H_ext_vec[] ];  In Domain_Total; Jacobian Vol; } } }
       { Name b;      Value { Local { [ mu[] * ({h} + H_ext_vec[]) ]; In Domain_Total; Jacobian Vol; } } }
       { Name normb;  Value { Local { [ Norm[mu[] * ({h} + H_ext_vec[])] ]; In Domain_Total; Jacobian Vol; } } }
-      { Name j;      Value { Local { [ {d h} ];          In Domain_Total; Jacobian Vol; } } }
-      { Name normj;  Value { Local { [ Norm[{d h}] ];    In Domain_Total; Jacobian Vol; } } }
+      { Name j;      Value { Local { [ {d h} ];          In HTS; Jacobian Vol; } } }
+      { Name normj;  Value { Local { [ Norm[{d h}] ];    In HTS; Jacobian Vol; } } }
       
-      // Exact calculation of localized power density & total integration loss
       { Name PowerDensity; Value { Local { [ (Ec / Jc) * (Norm[{d h}] / Jc)^(n - 1.0) * SquNorm[{d h}] ]; In HTS; Jacobian Vol; } } }
       { Name Loss_HTS;     Value { Integral { [ (Ec / Jc) * (Norm[{d h}] / Jc)^(n - 1.0) * SquNorm[{d h}] ]; In HTS; Jacobian Vol; Integration  Int; } } }
     }
@@ -174,7 +168,7 @@ PostProcessing {
 }
 
 // ==========================================
-// 10. POST-OPERATION (Cleaned Syntax)
+// 10. POST-OPERATION
 // ==========================================
 PostOperation {
   { Name Map; NameOfPostProcessing Magnetics_H;

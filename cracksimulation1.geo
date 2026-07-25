@@ -1,13 +1,13 @@
-// Gmsh project - REBCO Tape with Center Crack (Optimized for High n-values)
+// Gmsh project - REBCO Tape with Center Crack (Full Thickness Cut)
 SetFactory("OpenCASCADE");
 
 tape_width = 4.0;    // 4 mm wide tape
-tape_thick = 0.04;   // Scaled to 0.04mm (Much closer to real REBCO physics)
+tape_thick = 0.04;   // 0.04 mm thickness (Stable engineering scale)
 air_radius = 10.0;   // 10 mm radius for air boundary
 lc_air = 0.5;        // Coarse mesh for far air
 
-crack_width = 0.2;   // 0.2 mm wide crack
-crack_thick = 0.04;  // Cuts fully through the thickness
+crack_width = 0.2;   // 0.2 mm wide central crack
+crack_thick = 0.04;  // Slices completely through the thickness cleanly
 
 // ==========================================
 // 1. DEFINE BASE SHAPES USING AUTOMATIC IDs
@@ -35,25 +35,26 @@ s_air = news; Plane Surface(s_air) = {cl1};
 // ==========================================
 // 3. BOOLEAN OPERATIONS & FRAGMENTS
 // ==========================================
+// Cut the center crack directly out of the tape layer
 split_tape[] = BooleanDifference{ Surface{s_tape}; Delete; }{ Surface{s_crack}; Delete; };
+
+// Embed the two tape pieces cleanly inside the air boundary circle
 out[] = BooleanFragments{ Surface{split_tape[], s_air}; Delete; }{};
 
 // ==========================================
 // 4. ADVANCED MESH REFINEMENT FOR HIGH N-VALUES
 // ==========================================
-// This automatically micro-refines the mesh *only* near the tape edges and crack
 Field[1] = Distance;
 Field[1].SurfacesList = {out[0], out[1]};
 Field[1].Sampling = 100;
 
 Field[2] = Threshold;
 Field[2].InField = 1;
-Field[2].SizeMin = 0.005;  // Ultra-fine mesh (5 micrometers) inside/near the tape
-Field[2].SizeMax = lc_air; // Normal mesh far away
-Field[2].DistMin = 0.05;   // Distance where finest mesh is active
-Field[2].DistMax = 1.5;    // Smooth transition zone out to the air
+Field[2].SizeMin = 0.01;   // Optimized 10-micrometer element sizing for raw speed
+Field[2].SizeMax = lc_air; 
+Field[2].DistMin = 0.02;   
+Field[2].DistMax = 1.0;    
 
-// New fixed code
 Background Field = 2;
 Mesh.MeshSizeFromPoints = 0; 
 Mesh.MeshSizeFromParametricPoints = 0;
