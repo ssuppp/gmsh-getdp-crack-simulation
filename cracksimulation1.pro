@@ -2,7 +2,7 @@
 // 1. GROUPS 
 // ==========================================
 Group {
-  HTS = Region[{1}];          // 2D Tape Surface
+  HTS = Region[{1}];          // 2D Tape Surface (Crack Geometry)
   Air = Region[{2}];          // 2D Air Surface
   Air_Infinity = Region[{3}]; // 1D Outer Boundary Ring
 
@@ -34,6 +34,10 @@ Function {
 // ==========================================
 Function {
   mu[] = mu0;
+  
+  // Dynamic non-linear resistivity calculation linking current state to Newton-Raphson loops
+  rho_power[] = (Ec / Jc) * (Norm[{d h}] / Jc + 1e-5)^(n - 1.0);
+  rho_hts[]   = 1.0 / ( (1.0 / rho_power[]) + (1.0 / rho_flow) );
   
   // Source Field Formulation vector profiles
   dH_ext_dt[] = Vector[0, H_ext_amplitude * 2.0 * Pi * f * Cos[2.0 * Pi * f * $Time], 0];
@@ -88,7 +92,7 @@ Integration {
 }
 
 // ==========================================
-// 7. FORMULATION (Robust Non-Linear Core)
+// 7. FORMULATION
 // ==========================================
 Formulation {
   { Name Magnetics_H; Type FemEquation;
@@ -97,9 +101,9 @@ Formulation {
     }
 
     Equation {
-      // Parallel flux-flow ceiling (rho_flow) integration preventing division-by-zero
+      // FIXED SYNTAX: rho_hts[] dynamically evaluates iterations securely.
       Galerkin {
-        [ (1.0 / ( (1.0 / ((Ec / Jc) * (Norm[{d h}] / Jc + 1e-5)^(n - 1.0))) + (1.0 / rho_flow) )) * Dof{d h}, {d h} ];
+        [ rho_hts[] * Dof{d h}, {d h} ];
         In HTS; Jacobian Vol; Integration Int;
       }
       
@@ -125,7 +129,7 @@ Formulation {
 }
 
 // ==========================================
-// 8. RESOLUTION (Fixed Syntax, High Speed)
+// 8. RESOLUTION
 // ==========================================
 Resolution {
   { Name Analysis;
@@ -136,9 +140,9 @@ Resolution {
       InitSolution[Sys];
       SaveSolution[Sys];
 
-      // 100 steps total over 2 complete cycles (Fast and stable)
+      // Time loop theta with relaxation factor = 0.5 for fast stability
       TimeLoopTheta[0, 2.0 * Period, Period / 50.0, 0.5] {
-        IterativeLoop[60, 1e-4, 0.6] { 
+        IterativeLoop[100, 1e-5, 0.5] { 
           Generate[Sys];    
           Solve[Sys]; 
         }
@@ -161,8 +165,9 @@ PostProcessing {
       { Name j;      Value { Local { [ {d h} ];          In HTS; Jacobian Vol; } } }
       { Name normj;  Value { Local { [ Norm[{d h}] ];    In HTS; Jacobian Vol; } } }
       
-      { Name PowerDensity; Value { Local { [ (Ec / Jc) * (Norm[{d h}] / Jc)^(n - 1.0) * SquNorm[{d h}] ]; In HTS; Jacobian Vol; } } }
-      { Name Loss_HTS;     Value { Integral { [ (Ec / Jc) * (Norm[{d h}] / Jc)^(n - 1.0) * SquNorm[{d h}] ]; In HTS; Jacobian Vol; Integration  Int; } } }
+      // FIXED SYNTAX: Aligned with formulation logic to protect integration routines
+      { Name PowerDensity; Value { Local { [ rho_hts[] * SquNorm[{d h}] ]; In HTS; Jacobian Vol; } } }
+      { Name Loss_HTS;     Value { Integral { [ rho_hts[] * SquNorm[{d h}] ]; In HTS; Jacobian Vol; Integration Int; } } }
     }
   }
 }
