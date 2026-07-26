@@ -42,10 +42,29 @@ split_tape[] = BooleanDifference{ Surface{s_tape}; Delete; }{ Surface{s_crack}; 
 out[] = BooleanFragments{ Surface{split_tape[], s_air}; Delete; }{};
 
 // ==========================================
-// 4. ADVANCED MESH REFINEMENT FOR HIGH N-VALUES
+// 4. SAFELY IDENTIFY REAL HTS VS AIR REGIONS
+// ==========================================
+// Select all generated surface pieces that sit inside the physical tape's boundaries
+s_hts_pieces[] = Surface In BoundingBox {
+  -tape_width/2 - 0.01, -tape_thick/2 - 0.01, -0.01, 
+   tape_width/2 + 0.01,  tape_thick/2 + 0.01,  0.01
+};
+
+// Select the air domains by grabbing everything inside the circle outer envelope
+s_all_pieces[] = Surface In BoundingBox {
+  -air_radius - 0.1, -air_radius - 0.1, -0.1,
+   air_radius + 0.1,  air_radius + 0.1,  0.1
+};
+
+// Remove the HTS surfaces from the full list to isolate the true air pieces
+s_air_pieces[] = s_all_pieces[];
+s_air_pieces[] -= s_hts_pieces[];
+
+// ==========================================
+// 5. ADVANCED MESH REFINEMENT 
 // ==========================================
 Field[1] = Distance;
-Field[1].SurfacesList = {out[0], out[1]};
+Field[1].SurfacesList = {s_hts_pieces[]};
 Field[1].Sampling = 100;
 
 Field[2] = Threshold;
@@ -61,11 +80,11 @@ Mesh.MeshSizeFromParametricPoints = 0;
 Mesh.MeshSizeExtendFromBoundary = 0;
 
 // ==========================================
-// 5. DYNAMIC PHYSICAL GROUPS (Matching .pro names)
+// 6. PHYSICAL GROUPS (Safely locked and verified)
 // ==========================================
-Physical Surface("HTS", 1) = {out[0], out[1]};              
-Physical Surface("Air", 2) = {out[2]};              
+Physical Surface("HTS", 1) = {s_hts_pieces[]};              
+Physical Surface("Air", 2) = {s_air_pieces[]};              
 Physical Curve("Air_Infinity", 3) = {c5, c6, c7, c8}; 
-Physical Curve("HTS_Boundary", 4) = CombinedBoundary{ Surface{out[0], out[1]}; };
+Physical Curve("HTS_Boundary", 4) = CombinedBoundary{ Surface{s_hts_pieces[]}; };
 
 Show "*";

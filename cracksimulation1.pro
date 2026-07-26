@@ -35,10 +35,6 @@ Function {
 Function {
   mu[] = mu0;
   
-  // Dynamic non-linear resistivity calculation linking current state to Newton-Raphson loops
-  rho_power[] = (Ec / Jc) * (Norm[{d h}] / Jc + 1e-5)^(n - 1.0);
-  rho_hts[]   = 1.0 / ( (1.0 / rho_power[]) + (1.0 / rho_flow) );
-  
   // Source Field Formulation vector profiles
   dH_ext_dt[] = Vector[0, H_ext_amplitude * 2.0 * Pi * f * Cos[2.0 * Pi * f * $Time], 0];
   H_ext_vec[] = Vector[0, H_ext_amplitude * Sin[2.0 * Pi * f * $Time], 0];
@@ -101,9 +97,9 @@ Formulation {
     }
 
     Equation {
-      // FIXED SYNTAX: rho_hts[] dynamically evaluates iterations securely.
+      // Inline execution block mapping nonlinear resistivity
       Galerkin {
-        [ rho_hts[] * Dof{d h}, {d h} ];
+        [ (1.0 / ( (1.0 / ((Ec / Jc) * (Norm[{d h}] / Jc + 1e-5)^(n - 1.0))) + (1.0 / rho_flow) )) * Dof{d h}, {d h} ];
         In HTS; Jacobian Vol; Integration Int;
       }
       
@@ -129,7 +125,7 @@ Formulation {
 }
 
 // ==========================================
-// 8. RESOLUTION
+// 8. RESOLUTION (STABILIZED FOR CRACK CORNERS)
 // ==========================================
 Resolution {
   { Name Analysis;
@@ -140,9 +136,9 @@ Resolution {
       InitSolution[Sys];
       SaveSolution[Sys];
 
-      // Time loop theta with relaxation factor = 0.5 for fast stability
-      TimeLoopTheta[0, 2.0 * Period, Period / 50.0, 0.5] {
-        IterativeLoop[100, 1e-5, 0.5] { 
+      // Lowered relaxation to 0.3 and bumped iterations to 150 to handle crack tip singularities
+      TimeLoopTheta[0, 2.0 * Period, Period / 50.0, 0.55] {
+        IterativeLoop[150, 1e-4, 0.3] { 
           Generate[Sys];    
           Solve[Sys]; 
         }
@@ -165,19 +161,19 @@ PostProcessing {
       { Name j;      Value { Local { [ {d h} ];          In HTS; Jacobian Vol; } } }
       { Name normj;  Value { Local { [ Norm[{d h}] ];    In HTS; Jacobian Vol; } } }
       
-      // FIXED SYNTAX: Aligned with formulation logic to protect integration routines
-      { Name PowerDensity; Value { Local { [ rho_hts[] * SquNorm[{d h}] ]; In HTS; Jacobian Vol; } } }
-      { Name Loss_HTS;     Value { Integral { [ rho_hts[] * SquNorm[{d h}] ]; In HTS; Jacobian Vol; Integration Int; } } }
+      { Name PowerDensity; Value { Local { [ (1.0 / ( (1.0 / ((Ec / Jc) * (Norm[{d h}] / Jc + 1e-5)^(n - 1.0))) + (1.0 / rho_flow) )) * SquNorm[{d h}] ]; In HTS; Jacobian Vol; } } }
+      { Name Loss_HTS;     Value { Integral { [ (1.0 / ( (1.0 / ((Ec / Jc) * (Norm[{d h}] / Jc + 1e-5)^(n - 1.0))) + (1.0 / rho_flow) )) * SquNorm[{d h}] ]; In HTS; Jacobian Vol; Integration Int; } } }
     }
   }
 }
 
 // ==========================================
-// 10. POST-OPERATION
+// 10. POST-OPERATION (CLEAN & RECOVERED)
 // ==========================================
 PostOperation {
   { Name Map; NameOfPostProcessing Magnetics_H;
     Operation {
+      // Default formatting completely avoids broken comma syntax errors
       Print[b,            OnElementsOf Domain_Total, File "b_crack.msh"];
       Print[normb,        OnElementsOf Domain_Total, File "normb_crack.msh"];
       Print[j,            OnElementsOf HTS,          File "j_crack.msh"];
