@@ -2,6 +2,10 @@ Function {
     mu0 = Pi*4e-7; // [H/m]
     nu0 = 1.0/mu0; // [m/H]
 
+    dbdh_anhyModel[] = TensorDiag[mu0, mu0, mu0];
+    nu_anhyModel[]   = nu0;
+    dhdb_anhyModel[] = TensorDiag[nu0, nu0, nu0];
+    
     DefineConstant[ec, jc, n];           // normal superconductor
     DefineConstant[jc_crack, n_crack];   // crack region
     DefineConstant[mur0, m0];
@@ -10,8 +14,6 @@ Function {
     // Missing constants for the power-law sigma model
     epsSigma  = 1e-8;   // Importance of the linear part for a-formulation [-]
     epsSigma2 = 1e-15;  // To prevent division by 0 in sigma [-]
-
-       // ... (ferro and copper parts unchanged) ...
 
     // ------- Superconductor (normal region) -------
     If(Flag_jcb == 1)
@@ -82,15 +84,23 @@ Function {
     // ------- Copper constitutive law -------
     sigma_copper[] = 58e6; // [S/m]
     rho_copper[] = 1./sigma_copper[]; //1e-2*1.81e-10;//
-
-    // ------- Using built-in functions for the power-law model -------
-    // rho_power_built_in[] = RhoPowerLaw[Norm[$1], jcb[$2], nb[$2]]{ec};
-   // drhodj_timesj_power_built_in[] = DRhoDJTimesJPowerLaw[$1, jcb[$2], nb[$2]]{ec};
-  // dedj_power_built_in[] = DEDJPowerLaw[$1, jcb[$2], nb[$2]]{ec};
+    
+    // ======= ALIASES FOR THE H-PHI THIN-SHELL FORMULATION =======
+    rho_powerTS[]   = rho_power_crk[$1,$2];
+    dedj_powerTS[]  = dedj_power_crk[$1,$2];
+    sigma_powerTS[] = sigma_power_crk[$1,$2];
+    djde_powerTS[]  = djde_power_crk[$1,$2];
+    sigmae[]        = sigma_power_norm[$1,$2]; 
+    // ============================================================
 }
 
 // Predefined regions
-Function{
+Function {
+
+}
+
+// Predefined regions
+Function {
     Flag_LinearProblem = (IsThereSuper == 1 || IsThereFerro == 1) ? 0 : 1;
 
     // ------- Air Properties -------
@@ -111,10 +121,17 @@ Function{
         djde[Super]  = djde_power_norm[$1,$2];
         mu[Super]    = mu0;
         nu[Super]    = nu0;
+        
+        // ======= ADDED: Crack Superconductor Bulk Properties =======
+        rho[CrackSuper]   = rho_power_crk[$1,$2];
+        dedj[CrackSuper]  = dedj_power_crk[$1,$2];
+        sigma[CrackSuper] = sigma_power_crk[$1,$2];
+        djde[CrackSuper]  = djde_power_crk[$1,$2];
+        mu[CrackSuper]    = mu0;
+        nu[CrackSuper]    = nu0;
     EndIf
 
     // ------- Thin-Shell Crack / Weak Surface Properties -------
-    // We apply the crack constitutive laws directly to GammaS (SHELL_UP/DOWN)
     If(formulation == h_phi_ts_formulation)
         rho[GammaS]   = rho_power_crk[$1,$2];
         dedj[GammaS]  = dedj_power_crk[$1,$2];
@@ -125,10 +142,8 @@ Function{
     EndIf
 
     // ------- Ferromagnetic Properties -------
-    If(IsThereFerro)
-        mu[Ferro]   = mu_anhyModel[$1];
-        dbdh[Ferro] = dbdh_anhyModel[$1];
-        nu[Ferro]   = nu_anhyModel[$1];
-        dhdb[Ferro] = dhdb_anhyModel[$1];
-    EndIf
+    mu[Ferro]   = mu0;
+    dbdh[Ferro] = TensorDiag[mu0, mu0, mu0]; 
+    nu[Ferro]   = nu0;
+    dhdb[Ferro] = TensorDiag[nu0, nu0, nu0];
 }

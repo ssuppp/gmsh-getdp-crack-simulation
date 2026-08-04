@@ -1,6 +1,5 @@
 Include "tape_data.pro";
 
-
 line = (preset == 4 || preset == 5);
 // Mesh size
 R = W_tape/2; // Radius
@@ -93,7 +92,6 @@ Else
   Line(101) = {14,11};   // bottom right
   Line(11)  = {11,12};   // right vertical
   Line(12)  = {12,15};   // top right
-  // middle vertical 103 is shared
 
   // Left half line loop: go counter-clockwise
   Line Loop(20) = {10,103,102,13};
@@ -101,10 +99,18 @@ Else
 
   // Right half line loop: go counter-clockwise
   Line Loop(21) = {101,11,12,-103};  // note the minus sign on 103
-
   Plane Surface(21) = {21};
 
-  // Now you can add Transfinite/Recombine if desired
+  // Combined external perimeter to carve a single clean hole out of the air domain
+  Line Loop(25) = {10, 101, 11, 12, 102, 13}; 
+
+  // Outer air shell boundary
+  Line Loop(30) = {2, 4, 6, 8};
+  
+  // Cut out the single combined hole loop instead of two intersecting loops
+  Plane Surface(30) = {30, 25};
+ 
+  // Map meshing constraints cleanly across shared elements
   Transfinite Line(10)  = numElementsTape Using Progression 1;
   Transfinite Line(101) = numElementsTape Using Progression 1;
   Transfinite Line(11)  = numElementsTape Using Progression 1;
@@ -118,14 +124,10 @@ Else
   Recombine Surface(20);
   Recombine Surface(21);
 
-  // Outer air
-  Line Loop(30) = {2, 4, 6, 8};
-  Plane Surface(30) = {30, 20, 21};
-
+  // Group Physical Elements (Duplicates completely removed here)
   Physical Surface("Air", AIR) = {30};
   Physical Line("Exterior boundary", SURF_OUT) = {2, 4, 6, 8};
 
-  // Two tape regions
   Physical Surface("Conducting domain", MATERIAL) = {20};
   Physical Surface("Crack domain", CRACK_MATERIAL) = {21};
 

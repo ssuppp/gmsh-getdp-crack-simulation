@@ -54,9 +54,6 @@ Group {
     // Crack (weak) superconductor region
     CrackSuper = Region[ CRACK_MATERIAL ];
 
-    // If some code expects Super to include the whole tape, you can also do:
-    Super += Region[ CRACK_MATERIAL ];
-
     IsThereSuper = 1;
 ElseIf(MaterialType == 2)
     Copper = Region[ MATERIAL ];
@@ -79,17 +76,22 @@ EndIf
 
     // Fill the regions for formulation
     MagnAnhyDomain = Region[ {Ferro} ];
-    MagnLinDomain = Region[ {Air, Super, Copper} ];
+    
+    // FIX A: Add CrackSuper here so GetDP computes the linear matrix properties
+    MagnLinDomain  = Region[ {Air, Super, CrackSuper, Copper} ]; 
+    
     If (formulation != h_phi_ts_formulation)
-        NonLinOmegaC = Region[ {Super} ];
+        // FIX B: Keep this line to bundle both for the E-J power law loop
+        NonLinOmegaC = Region[ {Super, CrackSuper} ]; 
     Else
         NonLinOmegaC = Region[ {GammaS} ];
     EndIf
+    
     LinOmegaC = Region[ {Copper} ];
-    OmegaC = Region[ {LinOmegaC, NonLinOmegaC} ];
-    OmegaCC = Region[ {Air, Ferro} ];
-    Omega = Region[ {OmegaC, OmegaCC} ];
-    ArbitraryPoint = Region[ ARBITRARY_POINT ]; // To fix the potential
+    OmegaC    = Region[ {LinOmegaC, NonLinOmegaC} ];
+    OmegaCC   = Region[ {Air, Ferro} ];
+    Omega     = Region[ {OmegaC, OmegaCC} ];
+    ArbitraryPoint = Region[ ARBITRARY_POINT ]; 
 
     // Boundaries for BC
     SurfOut = Region[ SURF_OUT ];
@@ -160,10 +162,11 @@ Constraint {
     { Name a ;
         Case {
             If(SourceType == 0)
-                {Region SurfOut ; Value 0.0;}
-                {Region SurfSym ; Value 0.0;}
-            ElseIf(SourceType == 1)
-                {Region SurfOut ; Value -X[] * mu0 ; TimeFunction hsVal[] ;}
+                { Region SurfOut ; Value 0.0; }
+                { Region SurfSym ; Value 0.0; }
+            EndIf
+            If(SourceType == 1)
+                { Region SurfOut ; Value -X[] * mu0 ; TimeFunction hsVal[] ; }
             EndIf
         }
     }
@@ -182,57 +185,55 @@ Constraint {
     { Name phi ;
         Case {
             If(SourceType == 0)
-                {Region ArbitraryPoint ; Value 0.0;} // If no surf sym (we could have put one here), fix it at one point
-            ElseIf(SourceType == 1)
-                {Region SurfOut ; Value XYZ[]*directionApplied[] ; TimeFunction hsVal[] ;}
+                { Region ArbitraryPoint ; Value 0.0; }
+            EndIf
+            If(SourceType == 1)
+                { Region SurfOut ; Value XYZ[]*directionApplied[] ; TimeFunction hsVal[] ; }
             EndIf
         }
     }
     { Name Current ; Type Assign;
         Case {
+            // Case 1: H-formulation, Coupled formulation, or H-phi thin-shell
             If(formulation == h_formulation || formulation == coupled_formulation || formulation == h_phi_ts_formulation)
-                // h-formulation and cuts
                 If(SourceType == 0)
                     { Region Cuts; Value 1.0; TimeFunction I[]; }
-                ElseIf(SourceType == 1)
-                    { Region Cuts; Value 0; }
                 EndIf
-            Else
-                // a-formulation and BF_RegionZ
+                If(SourceType == 1)
+                    { Region Cuts; Value 0.0; }
+                EndIf
+            EndIf
+            
+            // Case 2: Standard 2D Bulk A-formulation (using the original tape preset)
+            If(formulation == a_formulation)
                 If(SourceType == 0)
                     { Region Cond; Value 1.0; TimeFunction I[]; }
-                ElseIf(SourceType == 1)
+                EndIf
+                If(SourceType == 1)
                     { Region Cond; Value 0.0; }
                 EndIf
-            ElseIf(formulation == ta_formulation)
-                // t-a-formulation
+            EndIf
+            
+            // Case 3: T-A Formulation thin sheet method
+            If(formulation == ta_formulation)
                 If(SourceType == 0)
-                    { Region Edge1; Value 1.0; TimeFunction I[]; } // t_tilde = w t
-                ElseIf(SourceType == 1)
+                    { Region Edge1; Value 1.0; TimeFunction I[]; }
+                EndIf
+                If(SourceType == 1)
                     { Region Edge1; Value 0.0; }
                 EndIf
             EndIf
         }
     }
-    { Name Voltage ; Case { } } // Nothing
-
-    { Name Connect; // required link Dofs in the h-phi_ts_formulation
-		Case {
-				{ Region GammaS_1; Type Link ; RegionRef GammaS_0;
-					Coefficient 1; Function Vector[$X,$Y,$Z] ;
-				}
-			}
-	}
-
 }
-
 
 Include "../lib/jac_int.pro";
 Include "../lib/formulations.pro";
 Include "../lib/resolution.pro";
 
 PostOperation {
-    // Runtime output for graph plot
+        
+        // Runtime output for graph plot
     { Name Info;
         If(formulation == h_formulation)
             NameOfPostProcessing MagDyn_htot ;
@@ -257,9 +258,20 @@ PostOperation {
                 Print[ I, OnRegion PositiveEdges, LastTimeStepOnly, Format Table, SendToServer "Output/1Applied current [A]"] ;
                 Print[ V, OnRegion PositiveEdges, LastTimeStepOnly, Format Table, SendToServer "Output/2Tension [Vm^-1]"] ;
             EndIf
-            Print[ dissPower[OmegaC], OnGlobal, Format Table, File "res/loss_vs_timecrack1.txt", SendToServer "Output/3Joule loss [W]"] ;       
-	 }
+            
+            // ======= FIXED: EXPLICIT 1D LINE INTEGRATION FOR AC LOSS =======
+            If(formulation == h_phi_ts_formulation)
+                // If it's a 1D thin-shell, integrate j * e multiplied by thickness over the shell lines
+                Print[ j[] * e[] * H_tape, OnRegion GammaS, Format Table, File "res/loss_vs_timecrack1.txt", SendToServer "Output/3Joule loss [W]"] ;       
+            Else
+                // Fallback 2D volume integration for standard formulations
+                Print[ dissPower[OmegaC], OnGlobal, Format Table, File "res/loss_vs_timecrack1.txt", SendToServer "Output/3Joule loss [W]"] ;       
+            EndIf
+            // ==============================================================
+        }
     }
+
+
     { Name MagDyn;LastTimeStepOnly realTimeSolution ;
         If(formulation == h_formulation)
             NameOfPostProcessing MagDyn_htot;
