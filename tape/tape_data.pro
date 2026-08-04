@@ -41,6 +41,7 @@ SURF_SYM = 13000;
 SURF_SYM_MAT = 13500;
 SURF_OUT = 14000000;
 MATERIAL = 23000;
+CRACK_MATERIAL = 23001;  // pick a new ID not used yet
 BND_MATERIAL = 25000;
 BND_MATERIAL_SIDE = 26000;
 THICK_CUT = SURF_OUT+1; // Fix me! It will be different depending on the other physical IDs

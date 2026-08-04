@@ -33,21 +33,35 @@ Group {
     Air += Region[ AIR_OUT ];
     If(MaterialType == 0)
         Air += Region[ MATERIAL ];
-    ElseIf(MaterialType == 1 || MaterialType == 2)
-        Cond = Region[ MATERIAL ];
-        BndOmegaC += Region[ BND_MATERIAL ];
-        BndOmegaC_side += Region[ BND_MATERIAL_SIDE ];
-        If (Flag_cohomology == 0)
-            Cuts = Region[ {CUT} ];
-        Else
-            Cuts = Region[ {THICK_CUT} ]; // Cohomology basis representatives = thick cuts
-        EndIf
-        If(MaterialType == 1)
-            Super += Region[ MATERIAL ];
-            IsThereSuper = 1;
-        ElseIf(MaterialType == 2)
-            Copper += Region[ MATERIAL ];
-        EndIf
+    Else
+	If(MaterialType == 1 || MaterialType == 2)
+    // Conducting domain = normal + crack
+    Cond = Region[ MATERIAL ];
+    Cond += Region[ CRACK_MATERIAL ];
+
+    BndOmegaC += Region[ BND_MATERIAL ];
+    BndOmegaC_side += Region[ BND_MATERIAL_SIDE ];
+
+    If (Flag_cohomology == 0)
+        Cuts = Region[ {CUT} ];
+    Else
+        Cuts = Region[ {THICK_CUT} ];
+    EndIf
+
+    If(MaterialType == 1)
+    // Normal superconductor region
+    Super = Region[ MATERIAL ];
+    // Crack (weak) superconductor region
+    CrackSuper = Region[ CRACK_MATERIAL ];
+
+    // If some code expects Super to include the whole tape, you can also do:
+    Super += Region[ CRACK_MATERIAL ];
+
+    IsThereSuper = 1;
+ElseIf(MaterialType == 2)
+    Copper = Region[ MATERIAL ];
+EndIf
+EndIf
     ElseIf(MaterialType == 3)
         Ferro += Region[ MATERIAL ];
         IsThereFerro = 1;
@@ -91,8 +105,10 @@ Function{
     // Superconductor parameters
     Flag_jcb = 1;
     b0 = 0.1;
-    DefineConstant [jc = {2.5e7, Name "Input/3Material Properties/2jc (Am⁻²)"}]; // Critical current density [A/m2]
-    DefineConstant [n = {15, Name "Input/3Material Properties/1n (-)"}]; // Superconductor exponent (n) value [-]
+    DefineConstant [jc = {2.5e7, Name "Input/3Material Properties/2jc (Am⁻²)"}];
+    DefineConstant [n = {15, Name "Input/3Material Properties/1n (-)"}];
+    DefineConstant [jc_crack = {2.5e5, Name "Input/3Material Properties/Crack jc (Am⁻²)"}];
+    DefineConstant [n_crack  = {10,    Name "Input/3Material Properties/Crack n (-)"}];
     // Ferromagnetic material parameters
     DefineConstant [mur0 = 1700.0]; // Relative permeability at low fields [-]
     DefineConstant [m0 = 1.04e6]; // Magnetic field at saturation [A/m]

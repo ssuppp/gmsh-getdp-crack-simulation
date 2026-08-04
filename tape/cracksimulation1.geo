@@ -73,49 +73,80 @@ If(line==1)
         Save "tape.msh";
     EndIf
 Else
-    Point(10) = {-R, -H_tape/2, 0, LcTape};
-    Point(11) = {R, -H_tape/2, 0, LcTape};
-    Point(12) = {R, H_tape/2, 0, LcTape};
-    Point(13) = {-R, H_tape/2, 0, LcTape};
-    Line(10) = {10,11};
-    Line(11) = {11,12};
-    Line(12) = {12,13};
-    Line(13) = {13,10};
-    Transfinite Line(10) = numElementsTape Using Progression 1;
-    Transfinite Line(12) = numElementsTape Using Progression 1;
-    Line Loop(20) = {10,11,12,13};
-    Plane Surface(20) = {20};
-    Transfinite Surface(20);
-    Recombine Surface(20);
-    //Line(101) = {11,4};
-    //Line(102) = {13,8};
-    Line Loop(30) = {2, 4, 6, 8};
-    Plane Surface(30) = {30, 20};
-    //Line Loop(31) = {-102,-12,-11,101,4,6};
-    //Plane Surface(31) = {31};
-    Physical Surface("Air", AIR) = {30};
-    Physical Line("Exterior boundary", SURF_OUT) = {2, 4, 6, 8};
-    Physical Surface("Conducting domain", MATERIAL) = {20};
-    Physical Line("Conducting domain boundary", BND_MATERIAL) = {10,11,12,13};
-    Physical Point("Left edge", EDGE_1) = {10};
-    Physical Point("Right edge", EDGE_2) = {11};
-    Physical Point("Arbitrary Point", ARBITRARY_POINT) = {11};
-    Physical Line("Cut", CUT) = {};
-    Physical Line("Positive side of bnds", BND_MATERIAL_SIDE) = {};
-    // Empty regions
-    Physical Surface("Spherical shell", AIR_OUT) = {};
-    Physical Line("Symmetry line", SURF_SYM) = {};
-    Physical Line("Shells common line", SURF_SHELL) = {};
-    Physical Line("Symmetry line material", SURF_SYM_MAT) = {};
-    Color Blue {Surface{30};}
+  // Tape corners
+  Point(10) = {-R, -H_tape/2, 0, LcTape};
+  Point(11) = { R, -H_tape/2, 0, LcTape};
+  Point(12) = { R,  H_tape/2, 0, LcTape};
+  Point(13) = {-R,  H_tape/2, 0, LcTape};
+
+  // Middle points
+  Point(14) = {0, -H_tape/2, 0, LcTape};
+  Point(15) = {0,  H_tape/2, 0, LcTape};
+
+  // Lines for left half
+  Line(10)  = {10,14};   // bottom left
+  Line(13)  = {13,10};   // left vertical
+  Line(102) = {15,13};   // top left
+  Line(103) = {14,15};   // middle vertical
+
+  // Lines for right half
+  Line(101) = {14,11};   // bottom right
+  Line(11)  = {11,12};   // right vertical
+  Line(12)  = {12,15};   // top right
+  // middle vertical 103 is shared
+
+  // Left half line loop: go counter-clockwise
+  Line Loop(20) = {10,103,102,13};
+  Plane Surface(20) = {20};
+
+  // Right half line loop: go counter-clockwise
+  Line Loop(21) = {101,11,12,-103};  // note the minus sign on 103
+
+  Plane Surface(21) = {21};
+
+  // Now you can add Transfinite/Recombine if desired
+  Transfinite Line(10)  = numElementsTape Using Progression 1;
+  Transfinite Line(101) = numElementsTape Using Progression 1;
+  Transfinite Line(11)  = numElementsTape Using Progression 1;
+  Transfinite Line(12)  = numElementsTape Using Progression 1;
+  Transfinite Line(102) = numElementsTape Using Progression 1;
+  Transfinite Line(13)  = numElementsTape Using Progression 1;
+  Transfinite Line(103) = numElementsTape Using Progression 1;
+
+  Transfinite Surface(20);
+  Transfinite Surface(21);
+  Recombine Surface(20);
+  Recombine Surface(21);
+
+  // Outer air
+  Line Loop(30) = {2, 4, 6, 8};
+  Plane Surface(30) = {30, 20, 21};
+
+  Physical Surface("Air", AIR) = {30};
+  Physical Line("Exterior boundary", SURF_OUT) = {2, 4, 6, 8};
+
+  // Two tape regions
+  Physical Surface("Conducting domain", MATERIAL) = {20};
+  Physical Surface("Crack domain", CRACK_MATERIAL) = {21};
+
+  // Tape boundary
+  Physical Line("Conducting domain boundary", BND_MATERIAL) = {10,101,11,12,102,13};
+
+  Physical Point("Left edge", EDGE_1) = {10};
+  Physical Point("Right edge", EDGE_2) = {11};
+  Physical Point("Arbitrary Point", ARBITRARY_POINT) = {11};
+
+  Physical Line("Cut", CUT) = {};
+  Physical Line("Positive side of bnds", BND_MATERIAL_SIDE) = {};
+
+  // Empty regions
+  Physical Surface("Spherical shell", AIR_OUT) = {};
+  Physical Line("Symmetry line", SURF_SYM) = {};
+  Physical Line("Shells common line", SURF_SHELL) = {};
+  Physical Line("Symmetry line material", SURF_SYM_MAT) = {};
+
+  Color Blue {Surface{30};}
 EndIf
-Field[1] = Ball;
-Field[1].Radius = 0.3e-3;
-Field[1].XCenter = 0;       // matches crack_center (in meters!)
-Field[1].YCenter = 0;
-Field[1].VIn = LcTape/4;    // finer mesh inside the crack zone
-Field[1].VOut = LcTape;     // normal mesh size elsewhere
-Background Field = 1;
 Hide { Point{ Point '*' }; }
 
 Cohomology(1) {{AIR}, {}};
