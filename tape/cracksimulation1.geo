@@ -78,10 +78,9 @@ Else
   Point(12) = { R,  H_tape/2, 0, LcTape};
   Point(13) = {-R,  H_tape/2, 0, LcTape};
 
-  // Middle points
-  Point(14) = {0, -H_tape/2, 0, LcTape};
-  Point(15) = {0,  H_tape/2, 0, LcTape};
-
+  crackWidth = 0.05*W_tape; // width of the crack region [m] — adjust as needed
+  Point(14) = {W_tape/2 - crackWidth/2, -H_tape/2, 0, LcTape};
+  Point(15) = {W_tape/2 - crackWidth/2,  H_tape/2, 0, LcTape};
   // Lines for left half
   Line(10)  = {10,14};   // bottom left
   Line(13)  = {13,10};   // left vertical

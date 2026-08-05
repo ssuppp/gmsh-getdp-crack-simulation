@@ -33,32 +33,23 @@ Group {
     Air += Region[ AIR_OUT ];
     If(MaterialType == 0)
         Air += Region[ MATERIAL ];
-    Else
-	If(MaterialType == 1 || MaterialType == 2)
-    // Conducting domain = normal + crack
-    Cond = Region[ MATERIAL ];
-    Cond += Region[ CRACK_MATERIAL ];
+    ElseIf(MaterialType == 1 || MaterialType == 2)
+        Cond = Region[ MATERIAL ];
+        BndOmegaC += Region[ BND_MATERIAL ];
+        BndOmegaC_side += Region[ BND_MATERIAL_SIDE ];
+        If (Flag_cohomology == 0)
+            Cuts = Region[ {CUT} ];
+        Else
+            Cuts = Region[ {THICK_CUT} ]; // Cohomology basis representatives = thick cuts
+        EndIf
+        If(MaterialType == 1)
+            Super += Region[ MATERIAL ];
+            CrackSuper += Region[ CRACK_MATERIAL ];
 
-    BndOmegaC += Region[ BND_MATERIAL ];
-    BndOmegaC_side += Region[ BND_MATERIAL_SIDE ];
-
-    If (Flag_cohomology == 0)
-        Cuts = Region[ {CUT} ];
-    Else
-        Cuts = Region[ {THICK_CUT} ];
-    EndIf
-
-    If(MaterialType == 1)
-    // Normal superconductor region
-    Super = Region[ MATERIAL ];
-    // Crack (weak) superconductor region
-    CrackSuper = Region[ CRACK_MATERIAL ];
-
-    IsThereSuper = 1;
-ElseIf(MaterialType == 2)
-    Copper = Region[ MATERIAL ];
-EndIf
-EndIf
+            IsThereSuper = 1;
+        ElseIf(MaterialType == 2)
+            Copper += Region[ MATERIAL ];
+        EndIf
     ElseIf(MaterialType == 3)
         Ferro += Region[ MATERIAL ];
         IsThereFerro = 1;
@@ -76,22 +67,17 @@ EndIf
 
     // Fill the regions for formulation
     MagnAnhyDomain = Region[ {Ferro} ];
-    
-    // FIX A: Add CrackSuper here so GetDP computes the linear matrix properties
-    MagnLinDomain  = Region[ {Air, Super, CrackSuper, Copper} ]; 
-    
+    MagnLinDomain = Region[ {Air, Super, CrackSuper, Copper} ];
     If (formulation != h_phi_ts_formulation)
-        // FIX B: Keep this line to bundle both for the E-J power law loop
-        NonLinOmegaC = Region[ {Super, CrackSuper} ]; 
+        NonLinOmegaC = Region[ {Super, CrackSuper} ];
     Else
         NonLinOmegaC = Region[ {GammaS} ];
     EndIf
-    
     LinOmegaC = Region[ {Copper} ];
-    OmegaC    = Region[ {LinOmegaC, NonLinOmegaC} ];
-    OmegaCC   = Region[ {Air, Ferro} ];
-    Omega     = Region[ {OmegaC, OmegaCC} ];
-    ArbitraryPoint = Region[ ARBITRARY_POINT ]; 
+    OmegaC = Region[ {LinOmegaC, NonLinOmegaC} ];
+    OmegaCC = Region[ {Air, Ferro} ];
+    Omega = Region[ {OmegaC, OmegaCC} ];
+    ArbitraryPoint = Region[ ARBITRARY_POINT ]; // To fix the potential
 
     // Boundaries for BC
     SurfOut = Region[ SURF_OUT ];
@@ -107,10 +93,12 @@ Function{
     // Superconductor parameters
     Flag_jcb = 1;
     b0 = 0.1;
-    DefineConstant [jc = {2.5e7, Name "Input/3Material Properties/2jc (Am⁻²)"}];
-    DefineConstant [n = {15, Name "Input/3Material Properties/1n (-)"}];
-    DefineConstant [jc_crack = {2.5e5, Name "Input/3Material Properties/Crack jc (Am⁻²)"}];
+    DefineConstant [jc = {2.5e7, Name "Input/3Material Properties/2jc (Am⁻²)"}]; // Critical current density [A/m2]
+    DefineConstant [n = {15, Name "Input/3Material Properties/1n (-)"}]; // Superconductor exponent (n) value [-]
+    DefineConstant [jc_crack = {2.5e5, Name "Input/3Material Properties/Crack jc (Am⁻²)"}]; // Degraded Jc at crack
     DefineConstant [n_crack  = {10,    Name "Input/3Material Properties/Crack n (-)"}];
+    DefineConstant [epsSigma = {1e-6,  Name "Input/3Material Properties/epsSigma"}];
+
     // Ferromagnetic material parameters
     DefineConstant [mur0 = 1700.0]; // Relative permeability at low fields [-]
     DefineConstant [m0 = 1.04e6]; // Magnetic field at saturation [A/m]
@@ -162,11 +150,10 @@ Constraint {
     { Name a ;
         Case {
             If(SourceType == 0)
-                { Region SurfOut ; Value 0.0; }
-                { Region SurfSym ; Value 0.0; }
-            EndIf
-            If(SourceType == 1)
-                { Region SurfOut ; Value -X[] * mu0 ; TimeFunction hsVal[] ; }
+                {Region SurfOut ; Value 0.0;}
+                {Region SurfSym ; Value 0.0;}
+            ElseIf(SourceType == 1)
+                {Region SurfOut ; Value -X[] * mu0 ; TimeFunction hsVal[] ;}
             EndIf
         }
     }
@@ -185,44 +172,45 @@ Constraint {
     { Name phi ;
         Case {
             If(SourceType == 0)
-                { Region ArbitraryPoint ; Value 0.0; }
-            EndIf
-            If(SourceType == 1)
-                { Region SurfOut ; Value XYZ[]*directionApplied[] ; TimeFunction hsVal[] ; }
+                {Region ArbitraryPoint ; Value 0.0;} // If no surf sym (we could have put one here), fix it at one point
+            ElseIf(SourceType == 1)
+                {Region SurfOut ; Value XYZ[]*directionApplied[] ; TimeFunction hsVal[] ;}
             EndIf
         }
     }
     { Name Current ; Type Assign;
         Case {
-            // Case 1: H-formulation, Coupled formulation, or H-phi thin-shell
             If(formulation == h_formulation || formulation == coupled_formulation || formulation == h_phi_ts_formulation)
+                // h-formulation and cuts
                 If(SourceType == 0)
                     { Region Cuts; Value 1.0; TimeFunction I[]; }
+                ElseIf(SourceType == 1)
+                    { Region Cuts; Value 0; }
                 EndIf
-                If(SourceType == 1)
-                    { Region Cuts; Value 0.0; }
-                EndIf
-            EndIf
-            
-            // Case 2: Standard 2D Bulk A-formulation (using the original tape preset)
-            If(formulation == a_formulation)
+            Else
+                // a-formulation and BF_RegionZ
                 If(SourceType == 0)
                     { Region Cond; Value 1.0; TimeFunction I[]; }
-                EndIf
-                If(SourceType == 1)
+                ElseIf(SourceType == 1)
                     { Region Cond; Value 0.0; }
                 EndIf
-            EndIf
-            
-            // Case 3: T-A Formulation thin sheet method
-            If(formulation == ta_formulation)
+            ElseIf(formulation == ta_formulation)
+                // t-a-formulation
                 If(SourceType == 0)
-                    { Region Edge1; Value 1.0; TimeFunction I[]; }
-                EndIf
-                If(SourceType == 1)
+                    { Region Edge1; Value 1.0; TimeFunction I[]; } // t_tilde = w t
+                ElseIf(SourceType == 1)
                     { Region Edge1; Value 0.0; }
                 EndIf
             EndIf
+        }
+    }
+    { Name Voltage ; Case { } } // Nothing
+
+    { Name Connect; // required link Dofs in the h-phi_ts_formulation
+        Case {
+            { Region GammaS_1; Type Link ; RegionRef GammaS_0;
+                Coefficient 1; Function Vector[$X,$Y,$Z] ;
+            }
         }
     }
 }
@@ -232,8 +220,7 @@ Include "../lib/formulations.pro";
 Include "../lib/resolution.pro";
 
 PostOperation {
-        
-        // Runtime output for graph plot
+    // Runtime output for graph plot
     { Name Info;
         If(formulation == h_formulation)
             NameOfPostProcessing MagDyn_htot ;
@@ -258,20 +245,9 @@ PostOperation {
                 Print[ I, OnRegion PositiveEdges, LastTimeStepOnly, Format Table, SendToServer "Output/1Applied current [A]"] ;
                 Print[ V, OnRegion PositiveEdges, LastTimeStepOnly, Format Table, SendToServer "Output/2Tension [Vm^-1]"] ;
             EndIf
-            
-            // ======= FIXED: EXPLICIT 1D LINE INTEGRATION FOR AC LOSS =======
-            If(formulation == h_phi_ts_formulation)
-                // If it's a 1D thin-shell, integrate j * e multiplied by thickness over the shell lines
-                Print[ j[] * e[] * H_tape, OnRegion GammaS, Format Table, File "res/loss_vs_timecrack1.txt", SendToServer "Output/3Joule loss [W]"] ;       
-            Else
-                // Fallback 2D volume integration for standard formulations
-                Print[ dissPower[OmegaC], OnGlobal, Format Table, File "res/loss_vs_timecrack1.txt", SendToServer "Output/3Joule loss [W]"] ;       
-            EndIf
-            // ==============================================================
-        }
+            Print[ dissPower[OmegaC], OnGlobal, Format Table, File "res/loss_vs_time.txt", SendToServer "Output/3Joule loss [W]"] ;       
+     }
     }
-
-
     { Name MagDyn;LastTimeStepOnly realTimeSolution ;
         If(formulation == h_formulation)
             NameOfPostProcessing MagDyn_htot;
@@ -334,7 +310,6 @@ PostOperation {
                     Print[ ji~{i}, OnElementsOf GammaS_0, File Sprintf("res/j_%g.pos", i), Name Sprintf("j(%g)",i) ];
                 EndFor
             EndIf
-            //Print[ hsVal[Omega], OnRegion Omega, Format TimeTable, File outputAppliedField];
         }
     }
 }
