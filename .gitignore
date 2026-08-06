@@ -17,7 +17,6 @@ tests/
 *.out
 *.pdf
 *.exe
-*.txt
 *.pos
 *.pre
 *.msh
